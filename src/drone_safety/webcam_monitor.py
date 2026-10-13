@@ -104,6 +104,8 @@ def main() -> None:
     mp_hands = mp.solutions.hands
     history: deque[np.ndarray] = deque(maxlen=args.window)
     palm_track: deque[np.ndarray] = deque(maxlen=12)
+    # Short voting window prevents one noisy frame from flickering the command.
+    direction_votes: deque[str] = deque(maxlen=5)
     last_features = None
     last_score = None
     last_prediction = None
@@ -142,7 +144,24 @@ def main() -> None:
                     # Palm centre from wrist and four MCP joints, less sensitive to finger pose.
                     palm_track.append(points[[0, 5, 9, 13, 17], :].mean(axis=0))
                     if args.commands:
-                        last_command = _direction_command(palm_track)
+                        raw_command = _direction_command(palm_track)
+                        direction_votes.append(raw_command)
+                        # Require repeated directional evidence; HOLD wins when
+                        # there is not enough consistent motion.
+                        directional_votes = [
+                            command for command in direction_votes if command != "HOLD"
+                        ]
+                        if len(directional_votes) >= 3:
+                            counts = {
+                                command: directional_votes.count(command)
+                                for command in set(directional_votes)
+                            }
+                            winner = max(counts, key=counts.get)
+                            last_command = (
+                                winner if counts[winner] >= 3 else "HOLD"
+                            )
+                        else:
+                            last_command = "HOLD"
 
                     if len(history) == args.window:
                         last_features = extract_movement_features(np.stack(history))
@@ -178,6 +197,7 @@ def main() -> None:
                 else:
                     # Avoid interpreting a hand reappearing elsewhere as continuous motion.
                     palm_track.clear()
+                    direction_votes.clear()
                     if args.commands:
                         last_command = "HOLD"
                         last_gate_result = "HOLD"
