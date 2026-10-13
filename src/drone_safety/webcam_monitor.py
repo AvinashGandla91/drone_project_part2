@@ -19,13 +19,13 @@ from .features import experimental_stability_score, extract_movement_features
 
 def _direction_command(track: deque[np.ndarray]) -> str:
     """Map palm-centre displacement over a short window to a simulated command."""
-    if len(track) < 4:
+    if len(track) < 3:
         return "HOLD"
     start = track[0]
     end = track[-1]
     delta = end - start
     # MediaPipe image coordinates: x grows right, y grows down. Webcam is mirrored.
-    if abs(delta[0]) < 0.025 and abs(delta[1]) < 0.025:
+    if abs(delta[0]) < 0.015 and abs(delta[1]) < 0.015:
         return "HOLD"
     if abs(delta[0]) >= abs(delta[1]):
         return "MOVE_RIGHT" if delta[0] > 0 else "MOVE_LEFT"
@@ -103,7 +103,7 @@ def main() -> None:
 
     mp_hands = mp.solutions.hands
     history: deque[np.ndarray] = deque(maxlen=args.window)
-    palm_track: deque[np.ndarray] = deque(maxlen=5)
+    palm_track: deque[np.ndarray] = deque(maxlen=4)
     # Short voting window prevents one noisy frame from flickering the command.
     direction_votes: deque[str] = deque(maxlen=3)
     last_features = None
