@@ -12,7 +12,7 @@ from pathlib import Path
 import pandas as pd
 from sklearn.ensemble import RandomForestClassifier
 from sklearn.metrics import balanced_accuracy_score, classification_report, confusion_matrix
-from sklearn.model_selection import train_test_split
+from sklearn.model_selection import GroupShuffleSplit, train_test_split
 from sklearn.pipeline import make_pipeline
 from sklearn.preprocessing import StandardScaler
 import joblib
@@ -28,7 +28,7 @@ FEATURE_COLUMNS = [
 
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--data", default="data/movement_features.csv")
+    parser.add_argument("--data", default="data/movement_features_sessions.csv")
     parser.add_argument("--model-out", default="models/movement_protocol_model.joblib")
     args = parser.parse_args()
 
@@ -50,13 +50,41 @@ def main() -> None:
     if dataset["label"].value_counts().min() < 2:
         raise SystemExit("Each label needs at least two rows for a stratified split.")
 
-    x_train, x_test, y_train, y_test = train_test_split(
-        dataset[FEATURE_COLUMNS],
-        dataset["label"].astype(str),
-        test_size=0.25,
-        random_state=42,
-        stratify=dataset["label"].astype(str),
-    )
+    labels_series = dataset["label"].astype(str)
+    has_sessions = "session_id" in dataset.columns
+    session_count = dataset["session_id"].nunique() if has_sessions else 0
+
+    if has_sessions and session_count >= 2:
+        splitter = GroupShuffleSplit(n_splits=1, test_size=0.5, random_state=42)
+        train_idx, test_idx = next(
+            splitter.split(dataset[FEATURE_COLUMNS], labels_series, groups=dataset["session_id"])
+        )
+        x_train = dataset.iloc[train_idx][FEATURE_COLUMNS]
+        x_test = dataset.iloc[test_idx][FEATURE_COLUMNS]
+        y_train = labels_series.iloc[train_idx]
+        y_test = labels_series.iloc[test_idx]
+        split_description = "Session-held-out evaluation (exploratory; small number of sessions)"
+        train_sessions = set(dataset.iloc[train_idx]["session_id"])
+        test_sessions = set(dataset.iloc[test_idx]["session_id"])
+        print(f"Training sessions: {sorted(train_sessions)}")
+        print(f"Test sessions: {sorted(test_sessions)}")
+        if set(y_train.unique()) != set(labels_series.unique()):
+            raise SystemExit(
+                "Training split does not contain every label. Collect more balanced "
+                "sessions before evaluating."
+            )
+        if set(y_test.unique()) != set(labels_series.unique()):
+            print("WARNING: Test session does not contain every label; metrics may be incomplete.")
+    else:
+        x_train, x_test, y_train, y_test = train_test_split(
+            dataset[FEATURE_COLUMNS],
+            labels_series,
+            test_size=0.25,
+            random_state=42,
+            stratify=labels_series,
+        )
+        split_description = "Random stratified window split (exploratory only)"
+        print("WARNING: No usable session IDs; random split can leak recording-specific patterns.")
     model = make_pipeline(
         StandardScaler(),
         RandomForestClassifier(
@@ -78,6 +106,7 @@ def main() -> None:
     print("Confusion matrix (rows=true, columns=predicted; labels=" + str(labels) + "):")
     print(matrix)
     print("\nIMPORTANT LIMITATION:")
+    print("- Session-based results from only a few sessions are highly uncertain.")
     print("- A random window split may put samples from the same recording/person")
     print("  in both train and test sets, inflating the apparent score.")
     print("- These labels represent controlled/varied movement protocol only.")
