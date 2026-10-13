@@ -26,9 +26,13 @@ Project II extends a vision-based hand-gesture drone controller with a movement-
 
 ```
 src/drone_safety/
-  features.py          # Movement features computed from 2D/3D landmark tracks
-  decision_fusion.py   # Gesture-confidence + stability safety gate
-  demo.py              # Small command-line demonstration
+  features.py                     # Movement features computed from 2D/3D landmark tracks
+  decision_fusion.py              # Gesture-confidence + stability safety gate
+  demo.py                          # Synthetic command-gate demonstration
+  webcam_monitor.py                # Standalone live webcam monitor
+  collect_dataset.py               # Consent-based movement-protocol data collector
+  train_stability_model.py         # Experimental controlled/varied protocol classifier
+  analyze_external_dataset.py      # Published tremor summary-table analysis
 tests/
   test_features.py
   test_decision_fusion.py
@@ -43,13 +47,12 @@ Python 3.10 or newer is recommended.
 ```powershell
 py -m venv .venv
 .\.venv\Scripts\Activate.ps1
-python -m pip install --upgrade pip
-python -m pip install -e .[dev]
+python -m pip install -e ".[dev]"
 pytest
 python -m drone_safety.demo
 ```
 
-If PowerShell blocks activation, run commands using `.venv\Scripts\python.exe` instead.
+If PowerShell blocks activation, run commands using the environment's `Scripts\python.exe` instead.
 
 ## Input format
 
@@ -57,68 +60,60 @@ If PowerShell blocks activation, run commands using `.venv\Scripts\python.exe` i
 
 The current implementation assumes the hand has already been detected and landmark points have already been extracted (for example, by the project's existing OpenCV/MediaPipe stage). It does not replace Part I gesture recognition.
 
-## Next development milestones
+## Published external dataset: TremorComputerVision
 
-- [x] Repository starter and documented project scope
-- [x] First movement feature extractor and rule-based experimental score
-- [x] Conservative simulated command gate
-- [x] Unit tests for core feature and fusion behavior
-- [ ] Connect features to the existing MediaPipe landmark stream
-- [ ] Collect a consent-based, labelled movement dataset with a defined protocol
-- [ ] Compare and validate candidate models using participant-separated evaluation
-- [ ] Add plots, confusion matrix and latency measurements
-- [ ] Integrate with the existing gesture pipeline in simulation
-- [ ] Evaluate lighting, background and partial-occlusion conditions
+We have added a script that downloads and analyzes published summary tables from [TremorComputerVision](https://github.com/JuliusWelzel/TremorComputerVision), a research project validating computer-vision tremor measurements against reference measurements. The associated paper reports 20 tremor-patient recordings and states that anonymous hand-tracking and ground-truth data are shared, while original videos and detailed clinical data are not available for legal reasons: [Scientific Reports paper](https://pmc.ncbi.nlm.nih.gov/articles/PMC12008214/).
 
-## Research reporting
+Run this from the project root in PowerShell:
 
-Record the dataset, participants/recording protocol, train/test split, thresholds, false accepts, false holds and latency. Keep synthetic checks separate from real-world evaluation and state limitations explicitly.
+```powershell
+.\.venv312\Scripts\python.exe -m pip install -e ".[ml]"
+.\.venv312\Scripts\python.exe -m drone_safety.analyze_external_dataset
+```
 
+The script downloads three small public summary tables into `data/external_tremor/`, compares the published MediaPipe normalized-landmark displacement with optical motion-capture displacement, prints exploratory error/correlation statistics, and writes a merged table. Use `--refresh` to download the source tables again.
+
+**Important:** This is a real external dataset analysis, but it is not yet raw landmark-window integration or model training. These published summary tables are suitable for a small exploratory measurement comparison, not for training a reliable fatigue/stress classifier. Do not interpret TETRAS association as diagnosis or as proof of safe drone operation. The source pickle files are not loaded by this script.
+
+See [DATASETS.md](DATASETS.md) for provenance and scope.
 
 ## Independent Part II webcam workflow
 
-Part II can run without the Part I group's code. The webcam monitor reads hand landmarks directly from your camera using MediaPipe. This gives us a standalone prototype while we wait for the other team's gesture-recognition output.
+Part II can run without the Part I group's code. The webcam monitor reads hand landmarks directly from your camera using MediaPipe.
 
 Install the optional computer-vision dependencies:
 
 ```powershell
-python -m pip install -e ".[vision]"
-```
-
-Start the live movement monitor:
-
-```powershell
-python -m drone_safety.webcam_monitor
+.\.venv312\Scripts\python.exe -m pip install -e ".[vision]"
+.\.venv312\Scripts\python.exe -m drone_safety.webcam_monitor
 ```
 
 Press `Q` or `Esc` to exit. If the default camera does not open, try `--camera 1`.
 
-### Collect movement-protocol data
+### Collect your own movement-protocol data
 
-The collector lets you record windows labelled `controlled` or `varied`. These labels describe the recording exercise only; they are **not** labels for fatigue, stress or cognitive state.
+The collector records windows labelled `controlled` or `varied`. These labels describe the recording exercise only; they are **not** labels for fatigue, stress or cognitive state.
 
 ```powershell
-python -m drone_safety.collect_dataset
+.\.venv312\Scripts\python.exe -m drone_safety.collect_dataset
 ```
 
-- Press `1` to select the controlled-movement protocol.
-- Press `2` to select the varied-movement protocol.
+- Press `1` to select controlled movement.
+- Press `2` to select varied movement.
 - Hold a consistent recording setup and press `Space` when a full window is available.
 - Press `Q` or `Esc` to stop.
 
-Only collect data with informed consent. Avoid collecting identifiable video; this tool saves numeric features only. For meaningful research, record multiple sessions and participants under a documented protocol.
+Only collect data with informed consent. This tool saves numeric features only, not video. For meaningful research, record multiple sessions/participants under a documented protocol.
 
 ### Train a first experimental model
 
-Install the optional ML dependencies and train from collected data:
-
 ```powershell
-python -m pip install -e ".[ml]"
-python -m drone_safety.train_stability_model
+.\.venv312\Scripts\python.exe -m pip install -e ".[ml]"
+.\.venv312\Scripts\python.exe -m drone_safety.train_stability_model
 ```
 
 The initial model predicts the collector's movement-protocol labels, not a person's cognitive state. A random window split may leak recording-specific patterns; proper research evaluation should split by participant or session and report limitations.
 
-### Current independence boundary
+## Current independence boundary
 
 This version includes its own webcam-to-landmark-to-feature path and simulated safety gate. It does not import Part I code, does not execute commands on a physical UAV, and does not establish a validated cognitive-stability classifier. Physical drone integration should remain out of scope until the system is tested and reviewed under lab safety procedures.
