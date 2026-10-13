@@ -23,13 +23,13 @@ from .features import (
 
 def _direction_command(track: deque[np.ndarray]) -> str:
     """Map palm-centre displacement over a short window to a simulated command."""
-    if len(track) < 3:
+    if len(track) < 2:
         return "HOLD"
     start = track[0]
     end = track[-1]
     delta = end - start
-    # MediaPipe image coordinates: x grows right, y grows down. Webcam is mirrored.
-    if abs(delta[0]) < 0.015 and abs(delta[1]) < 0.015:
+    # Use a short displacement window for responsiveness; coordinates are normalized.
+    if abs(delta[0]) < 0.010 and abs(delta[1]) < 0.010:
         return "HOLD"
     if abs(delta[0]) >= abs(delta[1]):
         return "MOVE_RIGHT" if delta[0] > 0 else "MOVE_LEFT"
@@ -107,9 +107,10 @@ def main() -> None:
 
     mp_hands = mp.solutions.hands
     history: deque[np.ndarray] = deque(maxlen=args.window)
-    palm_track: deque[np.ndarray] = deque(maxlen=4)
-    # Short voting window prevents one noisy frame from flickering the command.
-    direction_votes: deque[str] = deque(maxlen=3)
+    palm_track: deque[np.ndarray] = deque(maxlen=3)
+    # Two-frame confirmation reduces latency while filtering isolated noisy detections.
+    direction_votes: deque[str] = deque(maxlen=2)
+    last_detected_command = "HOLD"
     last_features = None
     last_score = None
     last_prediction = None
@@ -149,41 +150,41 @@ def main() -> None:
                     palm_track.append(points[[0, 5, 9, 13, 17], :].mean(axis=0))
                     if args.commands:
                         raw_command = _direction_command(palm_track)
+                        # Reset stale votes immediately when direction changes or motion stops.
+                        if raw_command == "HOLD" or (
+                            direction_votes and raw_command != direction_votes[-1]
+                        ):
+                            direction_votes.clear()
                         direction_votes.append(raw_command)
-                        # Require repeated directional evidence; HOLD wins when
-                        # there is not enough consistent motion.
-                        directional_votes = [
-                            command for command in direction_votes if command != "HOLD"
-                        ]
-                        if len(directional_votes) >= 2:
-                            counts = {
-                                command: directional_votes.count(command)
-                                for command in set(directional_votes)
-                            }
-                            winner = max(counts, key=counts.get)
-                            last_command = (
-                                winner if counts[winner] >= 2 else "HOLD"
-                            )
-                        else:
-                            last_command = "HOLD"
+                        last_detected_command = (
+                            raw_command
+                            if raw_command != "HOLD" and len(direction_votes) >= 2
+                                and direction_votes[-2] == raw_command
+                            else "HOLD"
+                        )
+                        last_command = last_detected_command
 
                     if len(history) == args.window:
                         last_features = extract_movement_features(np.stack(history))
                         last_score = experimental_stability_score(last_features)
                         if args.commands:
-                            if last_command == "HOLD":
+                            if last_detected_command == "HOLD":
                                 last_gate_result = "HOLD"
-                                last_gate_reason = "No directional movement detected."
+                                last_gate_reason = "No consistent directional movement detected."
+                                last_command = "HOLD"
                             else:
                                 decision = validate_command(
-                                    last_command,
+                                    last_detected_command,
                                     args.demo_gesture_confidence,
                                     last_score,
                                 )
                                 last_gate_result = decision.result.value.upper()
                                 last_gate_reason = decision.reason
-                                if decision.simulated_command is None:
-                                    last_command = "HOLD"
+                                last_command = (
+                                    decision.simulated_command
+                                    if decision.simulated_command is not None
+                                    else "HOLD"
+                                )
                         if classifier is not None:
                             row = last_features.to_dict()
                             missing = [name for name in feature_columns if name not in row]
@@ -204,6 +205,7 @@ def main() -> None:
                     direction_votes.clear()
                     if args.commands:
                         last_command = "HOLD"
+                        last_detected_command = "HOLD"
                         last_gate_result = "HOLD"
                         last_gate_reason = "No hand detected."
 
@@ -259,18 +261,23 @@ def main() -> None:
 
                 if args.commands:
                     cv2.putText(
-                        frame, f"SAFETY GATE: {last_gate_result} | COMMAND: {last_command}",
-                        (12, 190), cv2.FONT_HERSHEY_SIMPLEX, 0.46,
-                        (255, 255, 0), 2, cv2.LINE_AA,
+                        frame, f"DETECTED: {last_detected_command}",
+                        (12, 190), cv2.FONT_HERSHEY_SIMPLEX, 0.48,
+                        (0, 255, 255), 2, cv2.LINE_AA,
+                    )
+                    cv2.putText(
+                        frame, f"SAFETY: {last_gate_result} | COMMAND: {last_command}",
+                        (12, 216), cv2.FONT_HERSHEY_SIMPLEX, 0.44,
+                        (0, 255, 255), 2, cv2.LINE_AA,
                     )
                     cv2.putText(
                         frame, f"Demo gesture confidence: {args.demo_gesture_confidence:.2f}",
-                        (12, 214), cv2.FONT_HERSHEY_SIMPLEX, 0.40,
+                        (12, 240), cv2.FONT_HERSHEY_SIMPLEX, 0.38,
                         (255, 255, 255), 1, cv2.LINE_AA,
                     )
                     cv2.putText(
                         frame, last_gate_reason[:95],
-                        (12, 238), cv2.FONT_HERSHEY_SIMPLEX, 0.34,
+                        (12, 262), cv2.FONT_HERSHEY_SIMPLEX, 0.34,
                         (255, 255, 255), 1, cv2.LINE_AA,
                     )
 
