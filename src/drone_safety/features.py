@@ -156,3 +156,18 @@ def experimental_stability_score(features: MovementFeatures) -> float:
         + 0.15 * tremor_penalty
     )
     return float(np.clip(score, 0.0, 1.0))
+
+
+def movement_stability_status(score: float) -> str:
+    """Label the experimental movement score for display, not cognitive diagnosis.
+
+    Thresholds mirror the demo safety gate and are provisional, not calibrated
+    against independently labelled operator-stability data.
+    """
+    if not 0.0 <= score <= 1.0:
+        raise ValueError("score must be between 0 and 1")
+    if score < 0.60:
+        return "LOW MOVEMENT STABILITY"
+    if score < 0.72:
+        return "UNCERTAIN MOVEMENT STABILITY"
+    return "HIGHER MOVEMENT STABILITY"
