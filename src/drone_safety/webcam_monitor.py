@@ -14,7 +14,11 @@ from pathlib import Path
 import numpy as np
 
 from .decision_fusion import validate_command
-from .features import experimental_stability_score, extract_movement_features
+from .features import (
+    experimental_stability_score,
+    extract_movement_features,
+    movement_stability_status,
+)
 
 
 def _direction_command(track: deque[np.ndarray]) -> str:
@@ -240,27 +244,33 @@ def main() -> None:
                         (12, 114), cv2.FONT_HERSHEY_SIMPLEX, 0.45,
                         (255, 255, 255), 1, cv2.LINE_AA,
                     )
+                    cv2.putText(
+                        frame,
+                        f"Movement status (experimental): {movement_stability_status(last_score)}",
+                        (12, 142), cv2.FONT_HERSHEY_SIMPLEX, 0.42,
+                        (255, 255, 255), 1, cv2.LINE_AA,
+                    )
                     if classifier is not None:
                         cv2.putText(
                             frame, f"Movement protocol prediction: {last_prediction}",
-                            (12, 142), cv2.FONT_HERSHEY_SIMPLEX, 0.48,
+                            (12, 164), cv2.FONT_HERSHEY_SIMPLEX, 0.44,
                             (255, 255, 255), 1, cv2.LINE_AA,
                         )
 
                 if args.commands:
                     cv2.putText(
                         frame, f"SAFETY GATE: {last_gate_result} | COMMAND: {last_command}",
-                        (12, 174), cv2.FONT_HERSHEY_SIMPLEX, 0.48,
+                        (12, 190), cv2.FONT_HERSHEY_SIMPLEX, 0.46,
                         (255, 255, 0), 2, cv2.LINE_AA,
                     )
                     cv2.putText(
                         frame, f"Demo gesture confidence: {args.demo_gesture_confidence:.2f}",
-                        (12, 202), cv2.FONT_HERSHEY_SIMPLEX, 0.42,
+                        (12, 214), cv2.FONT_HERSHEY_SIMPLEX, 0.40,
                         (255, 255, 255), 1, cv2.LINE_AA,
                     )
                     cv2.putText(
                         frame, last_gate_reason[:95],
-                        (12, 226), cv2.FONT_HERSHEY_SIMPLEX, 0.36,
+                        (12, 238), cv2.FONT_HERSHEY_SIMPLEX, 0.34,
                         (255, 255, 255), 1, cv2.LINE_AA,
                     )
 
