@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import argparse
 import csv
+import uuid
 from collections import deque
 from datetime import datetime, timezone
 from pathlib import Path
@@ -25,12 +26,17 @@ FIELDNAMES = [
     "motion_entropy",
     "frame_count",
     "recorded_at_utc",
+    "session_id",
 ]
 
 
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--output", default="data/movement_features.csv")
+    parser.add_argument(
+        "--output",
+        default="data/movement_features_sessions.csv",
+        help="Output CSV with a unique session_id for leakage-aware evaluation",
+    )
     parser.add_argument("--camera", type=int, default=0)
     parser.add_argument("--window", type=int, default=30)
     args = parser.parse_args()
@@ -48,6 +54,8 @@ def main() -> None:
     output = Path(args.output)
     output.parent.mkdir(parents=True, exist_ok=True)
     file_exists = output.exists() and output.stat().st_size > 0
+    session_id = uuid.uuid4().hex[:12]
+    print(f"Recording session ID: {session_id}")
 
     camera = cv2.VideoCapture(args.camera)
     if not camera.isOpened():
@@ -116,6 +124,7 @@ def main() -> None:
                             "label": label,
                             **features,
                             "recorded_at_utc": datetime.now(timezone.utc).isoformat(),
+                            "session_id": session_id,
                         })
                         csv_file.flush()
                         last_saved += 1
@@ -126,6 +135,7 @@ def main() -> None:
         cv2.destroyAllWindows()
 
     print(f"Saved {last_saved} feature windows to {output}")
+    print(f"Session ID: {session_id}")
     print("These labels describe movement protocol only; do not interpret them as fatigue/stress.")
 
 
