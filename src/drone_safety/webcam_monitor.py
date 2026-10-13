@@ -1,9 +1,8 @@
 """Independent webcam demo for Part II (no Part I repository required).
 
-This tool observes MediaPipe hand landmarks and displays an experimental
-movement-stability proxy. An optional saved model can classify the recording
-protocol as controlled/varied. Neither output diagnoses fatigue or stress,
-and this tool does not control a physical drone.
+Displays experimental movement features and optional movement-protocol prediction.
+With --commands, hand motion is mapped to simulated directional commands only.
+No command is sent to a physical drone.
 """
 
 from __future__ import annotations
@@ -14,7 +13,23 @@ from pathlib import Path
 
 import numpy as np
 
+from .decision_fusion import validate_command
 from .features import experimental_stability_score, extract_movement_features
+
+
+def _direction_command(track: deque[np.ndarray]) -> str:
+    """Map palm-centre displacement over a short window to a simulated command."""
+    if len(track) < 8:
+        return "HOLD"
+    start = track[0]
+    end = track[-1]
+    delta = end - start
+    # MediaPipe image coordinates: x grows right, y grows down. Webcam is mirrored.
+    if abs(delta[0]) < 0.055 and abs(delta[1]) < 0.055:
+        return "HOLD"
+    if abs(delta[0]) >= abs(delta[1]):
+        return "MOVE_RIGHT" if delta[0] > 0 else "MOVE_LEFT"
+    return "MOVE_DOWN" if delta[1] > 0 else "MOVE_UP"
 
 
 def main() -> None:
@@ -25,6 +40,11 @@ def main() -> None:
         "--model",
         default=None,
         help="Optional model file, e.g. models/movement_protocol_model.joblib",
+    )
+    parser.add_argument(
+        "--commands",
+        action="store_true",
+        help="Show experimental simulated directional commands from hand motion",
     )
     args = parser.parse_args()
 
@@ -72,9 +92,11 @@ def main() -> None:
 
     mp_hands = mp.solutions.hands
     history: deque[np.ndarray] = deque(maxlen=args.window)
+    palm_track: deque[np.ndarray] = deque(maxlen=12)
     last_features = None
     last_score = None
     last_prediction = None
+    last_command = "HOLD"
 
     try:
         with mp_hands.Hands(
@@ -104,6 +126,10 @@ def main() -> None:
                         dtype=np.float64,
                     )
                     history.append(points)
+                    # Palm centre from wrist and four MCP joints, less sensitive to finger pose.
+                    palm_track.append(points[[0, 5, 9, 13, 17], :].mean(axis=0))
+                    if args.commands:
+                        last_command = _direction_command(palm_track)
 
                     if len(history) == args.window:
                         last_features = extract_movement_features(np.stack(history))
@@ -122,21 +148,21 @@ def main() -> None:
                                 columns=feature_columns,
                             )
                             last_prediction = str(classifier.predict(sample)[0])
+                else:
+                    # Avoid interpreting a hand reappearing elsewhere as continuous motion.
+                    palm_track.clear()
+                    if args.commands:
+                        last_command = "HOLD"
 
                 cv2.putText(
-                    frame,
-                    "Part II: experimental movement analysis",
-                    (12, 28),
-                    cv2.FONT_HERSHEY_SIMPLEX,
-                    0.58,
-                    (255, 255, 255),
-                    2,
-                    cv2.LINE_AA,
+                    frame, "Part II: experimental movement analysis",
+                    (12, 28), cv2.FONT_HERSHEY_SIMPLEX, 0.58,
+                    (255, 255, 255), 2, cv2.LINE_AA,
                 )
                 if not result.multi_hand_landmarks:
-                    status = "No hand detected - show one hand to camera"
                     cv2.putText(
-                        frame, status, (12, 60), cv2.FONT_HERSHEY_SIMPLEX, 0.55,
+                        frame, "No hand detected - show one hand to camera",
+                        (12, 60), cv2.FONT_HERSHEY_SIMPLEX, 0.55,
                         (255, 255, 255), 2, cv2.LINE_AA,
                     )
                 elif last_score is None:
@@ -172,8 +198,20 @@ def main() -> None:
                             (255, 255, 255), 1, cv2.LINE_AA,
                         )
 
+                if args.commands:
+                    cv2.putText(
+                        frame, f"SIMULATED COMMAND: {last_command}",
+                        (12, 174), cv2.FONT_HERSHEY_SIMPLEX, 0.58,
+                        (255, 255, 0), 2, cv2.LINE_AA,
+                    )
+                    cv2.putText(
+                        frame, "Motion mapping only: left/right/up/down; neutral = HOLD",
+                        (12, 202), cv2.FONT_HERSHEY_SIMPLEX, 0.42,
+                        (255, 255, 255), 1, cv2.LINE_AA,
+                    )
+
                 cv2.putText(
-                    frame, "Experimental only; not a diagnosis. Press Q or ESC to quit.",
+                    frame, "Simulation only; no physical drone commands. Q/ESC exits.",
                     (12, frame.shape[0] - 16), cv2.FONT_HERSHEY_SIMPLEX,
                     0.45, (255, 255, 255), 1, cv2.LINE_AA,
                 )
