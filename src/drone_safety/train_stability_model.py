@@ -11,7 +11,7 @@ from pathlib import Path
 
 import pandas as pd
 from sklearn.ensemble import RandomForestClassifier
-from sklearn.metrics import classification_report
+from sklearn.metrics import balanced_accuracy_score, classification_report, confusion_matrix
 from sklearn.model_selection import train_test_split
 from sklearn.pipeline import make_pipeline
 from sklearn.preprocessing import StandardScaler
@@ -68,12 +68,22 @@ def main() -> None:
     model.fit(x_train, y_train)
     predictions = model.predict(x_test)
 
-    print("Holdout results for collector movement labels only:")
+    print("Dataset summary (movement-protocol labels only):")
+    print(dataset["label"].astype(str).value_counts().to_string())
+    print("\\nRandom stratified holdout results (exploratory only):")
     print(classification_report(y_test, predictions, zero_division=0))
-    print("Warning: random window split can overestimate performance when windows")
-    print("from the same recording/person appear in both train and test sets.")
-    print("For research reporting, collect multiple sessions/participants and use")
-    print("participant- or session-separated evaluation.")
+    print(f"Balanced accuracy: {balanced_accuracy_score(y_test, predictions):.3f}")
+    labels = sorted(dataset["label"].astype(str).unique())
+    matrix = confusion_matrix(y_test, predictions, labels=labels)
+    print("Confusion matrix (rows=true, columns=predicted; labels=" + str(labels) + "):")
+    print(matrix)
+    print("\\nIMPORTANT LIMITATION:")
+    print("- A random window split may put samples from the same recording/person")
+    print("  in both train and test sets, inflating the apparent score.")
+    print("- These labels represent controlled/varied movement protocol only.")
+    print("- This does NOT evaluate fatigue, stress, cognitive state, or drone safety.")
+    print("- For a stronger evaluation, collect multiple separately identified sessions")
+    print("  (or participants) and reserve entire sessions/participants for testing.")
 
     output = Path(args.model_out)
     output.parent.mkdir(parents=True, exist_ok=True)
