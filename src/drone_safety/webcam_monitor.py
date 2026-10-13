@@ -44,12 +44,23 @@ def main() -> None:
     parser.add_argument(
         "--commands",
         action="store_true",
-        help="Show experimental simulated directional commands from hand motion",
+        help="Show simulated directional commands passed through the safety gate",
+    )
+    parser.add_argument(
+        "--demo-gesture-confidence",
+        type=float,
+        default=0.90,
+        help=(
+            "Placeholder gesture confidence for standalone testing only; "
+            "replace with Part I model output during integration (default: 0.90)"
+        ),
     )
     args = parser.parse_args()
 
     if args.window < 8:
         parser.error("--window must be at least 8")
+    if not 0.0 <= args.demo_gesture_confidence <= 1.0:
+        parser.error("--demo-gesture-confidence must be between 0 and 1")
 
     try:
         import cv2
@@ -97,6 +108,8 @@ def main() -> None:
     last_score = None
     last_prediction = None
     last_command = "HOLD"
+    last_gate_result = "HOLD"
+    last_gate_reason = "No directional movement detected."
 
     try:
         with mp_hands.Hands(
@@ -134,6 +147,20 @@ def main() -> None:
                     if len(history) == args.window:
                         last_features = extract_movement_features(np.stack(history))
                         last_score = experimental_stability_score(last_features)
+                        if args.commands:
+                            if last_command == "HOLD":
+                                last_gate_result = "HOLD"
+                                last_gate_reason = "No directional movement detected."
+                            else:
+                                decision = validate_command(
+                                    last_command,
+                                    args.demo_gesture_confidence,
+                                    last_score,
+                                )
+                                last_gate_result = decision.result.value.upper()
+                                last_gate_reason = decision.reason
+                                if decision.simulated_command is None:
+                                    last_command = "HOLD"
                         if classifier is not None:
                             row = last_features.to_dict()
                             missing = [name for name in feature_columns if name not in row]
@@ -153,6 +180,8 @@ def main() -> None:
                     palm_track.clear()
                     if args.commands:
                         last_command = "HOLD"
+                        last_gate_result = "HOLD"
+                        last_gate_reason = "No hand detected."
 
                 cv2.putText(
                     frame, "Part II: experimental movement analysis",
@@ -200,13 +229,18 @@ def main() -> None:
 
                 if args.commands:
                     cv2.putText(
-                        frame, f"SIMULATED COMMAND: {last_command}",
-                        (12, 174), cv2.FONT_HERSHEY_SIMPLEX, 0.58,
+                        frame, f"SAFETY GATE: {last_gate_result} | COMMAND: {last_command}",
+                        (12, 174), cv2.FONT_HERSHEY_SIMPLEX, 0.48,
                         (255, 255, 0), 2, cv2.LINE_AA,
                     )
                     cv2.putText(
-                        frame, "Motion mapping only: left/right/up/down; neutral = HOLD",
+                        frame, f"Demo gesture confidence: {args.demo_gesture_confidence:.2f}",
                         (12, 202), cv2.FONT_HERSHEY_SIMPLEX, 0.42,
+                        (255, 255, 255), 1, cv2.LINE_AA,
+                    )
+                    cv2.putText(
+                        frame, last_gate_reason[:95],
+                        (12, 226), cv2.FONT_HERSHEY_SIMPLEX, 0.36,
                         (255, 255, 255), 1, cv2.LINE_AA,
                     )
 
