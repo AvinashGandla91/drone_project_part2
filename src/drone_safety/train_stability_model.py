@@ -98,7 +98,7 @@ def main() -> None:
 
     print("Dataset summary (movement-protocol labels only):")
     print(dataset["label"].astype(str).value_counts().to_string())
-    print("\nRandom stratified holdout results (exploratory only):")
+    print(f"\n{split_description}:")
     print(classification_report(y_test, predictions, zero_division=0))
     print(f"Balanced accuracy: {balanced_accuracy_score(y_test, predictions):.3f}")
     labels = sorted(dataset["label"].astype(str).unique())
