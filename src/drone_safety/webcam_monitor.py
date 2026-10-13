@@ -19,13 +19,13 @@ from .features import experimental_stability_score, extract_movement_features
 
 def _direction_command(track: deque[np.ndarray]) -> str:
     """Map palm-centre displacement over a short window to a simulated command."""
-    if len(track) < 8:
+    if len(track) < 6:
         return "HOLD"
     start = track[0]
     end = track[-1]
     delta = end - start
     # MediaPipe image coordinates: x grows right, y grows down. Webcam is mirrored.
-    if abs(delta[0]) < 0.055 and abs(delta[1]) < 0.055:
+    if abs(delta[0]) < 0.04 and abs(delta[1]) < 0.04:
         return "HOLD"
     if abs(delta[0]) >= abs(delta[1]):
         return "MOVE_RIGHT" if delta[0] > 0 else "MOVE_LEFT"
@@ -103,9 +103,9 @@ def main() -> None:
 
     mp_hands = mp.solutions.hands
     history: deque[np.ndarray] = deque(maxlen=args.window)
-    palm_track: deque[np.ndarray] = deque(maxlen=12)
+    palm_track: deque[np.ndarray] = deque(maxlen=8)
     # Short voting window prevents one noisy frame from flickering the command.
-    direction_votes: deque[str] = deque(maxlen=5)
+    direction_votes: deque[str] = deque(maxlen=3)
     last_features = None
     last_score = None
     last_prediction = None
@@ -151,14 +151,14 @@ def main() -> None:
                         directional_votes = [
                             command for command in direction_votes if command != "HOLD"
                         ]
-                        if len(directional_votes) >= 3:
+                        if len(directional_votes) >= 2:
                             counts = {
                                 command: directional_votes.count(command)
                                 for command in set(directional_votes)
                             }
                             winner = max(counts, key=counts.get)
                             last_command = (
-                                winner if counts[winner] >= 3 else "HOLD"
+                                winner if counts[winner] >= 2 else "HOLD"
                             )
                         else:
                             last_command = "HOLD"
