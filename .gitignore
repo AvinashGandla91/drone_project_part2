@@ -4,6 +4,7 @@ __pycache__/
 .pytest_cache/
 .ruff_cache/
 .venv/
+.venv312/
 venv/
 .env
 .env.*
@@ -14,5 +15,6 @@ venv/
 outputs/
 data/raw/
 data/private/
+data/external_tremor/
 models/*.joblib
 models/*.pkl
