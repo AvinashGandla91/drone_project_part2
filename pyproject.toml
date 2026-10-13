@@ -19,11 +19,12 @@ dev = [
 ]
 vision = [
   "opencv-python>=4.8",
-  "mediapipe>=0.10",
+  "mediapipe==0.10.21",
 ]
 ml = [
   "scikit-learn>=1.3",
   "joblib>=1.3",
+  "pandas>=2.0",
 ]
 
 [tool.setuptools.packages.find]
