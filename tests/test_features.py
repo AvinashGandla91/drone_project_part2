@@ -63,3 +63,42 @@ def test_movement_stability_status(score, expected):
 def test_movement_stability_status_rejects_out_of_range_scores(score):
     with pytest.raises(ValueError):
         movement_stability_status(score)
+
+def _translated_hand_track(positions):
+    """Build deterministic 21-landmark tracks translated along known paths."""
+    base = np.linspace(0.0, 1.0, 21)
+    shape = np.column_stack((base * 0.02, base * 0.03))
+    return np.stack([shape + np.asarray(position) for position in positions])
+
+
+def test_smooth_unidirectional_motion_has_low_direction_entropy():
+    positions = [(index * 0.01, 0.0) for index in range(30)]
+    result = extract_movement_features(_translated_hand_track(positions))
+
+    assert result.motion_entropy == pytest.approx(0.0, abs=1e-8)
+    assert result.velocity_fluctuation == pytest.approx(0.0, abs=1e-8)
+
+
+def test_reversing_and_changing_direction_increases_motion_entropy():
+    # Alternate among eight directions so the track occupies multiple direction bins.
+    directions = [
+        (1, 0), (1, 1), (0, 1), (-1, 1),
+        (-1, 0), (-1, -1), (0, -1), (1, -1),
+    ]
+    positions = [(0.0, 0.0)]
+    x, y = 0.0, 0.0
+    for index in range(32):
+        dx, dy = directions[index % len(directions)]
+        step = 0.004 * (1 + (index % 3))
+        x += dx * step
+        y += dy * step
+        positions.append((x, y))
+
+    varied = extract_movement_features(_translated_hand_track(positions))
+    smooth_positions = [(index * 0.01, 0.0) for index in range(len(positions))]
+    smooth = extract_movement_features(_translated_hand_track(smooth_positions))
+
+    assert varied.motion_entropy > smooth.motion_entropy
+    assert 0.0 <= varied.motion_entropy <= 1.0
+    assert np.isfinite(varied.velocity_fluctuation)
+
