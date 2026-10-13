@@ -73,3 +73,52 @@ The current implementation assumes the hand has already been detected and landma
 ## Research reporting
 
 Record the dataset, participants/recording protocol, train/test split, thresholds, false accepts, false holds and latency. Keep synthetic checks separate from real-world evaluation and state limitations explicitly.
+
+
+## Independent Part II webcam workflow
+
+Part II can run without the Part I group's code. The webcam monitor reads hand landmarks directly from your camera using MediaPipe. This gives us a standalone prototype while we wait for the other team's gesture-recognition output.
+
+Install the optional computer-vision dependencies:
+
+```powershell
+python -m pip install -e ".[vision]"
+```
+
+Start the live movement monitor:
+
+```powershell
+python -m drone_safety.webcam_monitor
+```
+
+Press `Q` or `Esc` to exit. If the default camera does not open, try `--camera 1`.
+
+### Collect movement-protocol data
+
+The collector lets you record windows labelled `controlled` or `varied`. These labels describe the recording exercise only; they are **not** labels for fatigue, stress or cognitive state.
+
+```powershell
+python -m drone_safety.collect_dataset
+```
+
+- Press `1` to select the controlled-movement protocol.
+- Press `2` to select the varied-movement protocol.
+- Hold a consistent recording setup and press `Space` when a full window is available.
+- Press `Q` or `Esc` to stop.
+
+Only collect data with informed consent. Avoid collecting identifiable video; this tool saves numeric features only. For meaningful research, record multiple sessions and participants under a documented protocol.
+
+### Train a first experimental model
+
+Install the optional ML dependencies and train from collected data:
+
+```powershell
+python -m pip install -e ".[ml]"
+python -m drone_safety.train_stability_model
+```
+
+The initial model predicts the collector's movement-protocol labels, not a person's cognitive state. A random window split may leak recording-specific patterns; proper research evaluation should split by participant or session and report limitations.
+
+### Current independence boundary
+
+This version includes its own webcam-to-landmark-to-feature path and simulated safety gate. It does not import Part I code, does not execute commands on a physical UAV, and does not establish a validated cognitive-stability classifier. Physical drone integration should remain out of scope until the system is tested and reviewed under lab safety procedures.
