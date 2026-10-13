@@ -108,6 +108,35 @@ def main() -> None:
         else:
             print("  Direction: varied does NOT have a lower mean score in this dataset.")
 
+    if "controlled" in labels and "varied" in labels:
+        controlled_scores = [float(row["score"]) for row in valid_rows if row["label"] == "controlled"]
+        varied_scores = [float(row["score"]) for row in valid_rows if row["label"] == "varied"]
+        candidates = sorted({*controlled_scores, *varied_scores})
+        candidates = [min(controlled_scores + varied_scores) - 1e-9, *candidates,
+                      max(controlled_scores + varied_scores) + 1e-9]
+        best = None
+        for threshold in candidates:
+            # Scores at/above threshold predict controlled; lower scores predict varied.
+            tp = sum(score < threshold for score in varied_scores)
+            fn = len(varied_scores) - tp
+            tn = sum(score >= threshold for score in controlled_scores)
+            fp = len(controlled_scores) - tn
+            sensitivity = tp / len(varied_scores)
+            specificity = tn / len(controlled_scores)
+            balanced_accuracy = (sensitivity + specificity) / 2
+            result = (balanced_accuracy, threshold, tp, fn, tn, fp, sensitivity, specificity)
+            if best is None or result[0] > best[0]:
+                best = result
+        assert best is not None
+        ba, threshold, tp, fn, tn, fp, sensitivity, specificity = best
+        print("\nExploratory threshold sweep (same data used to choose threshold):")
+        print(f"  Best threshold: {threshold:.4f} (score below threshold predicts varied)")
+        print(f"  Confusion matrix: TP varied={tp}, FN varied={fn}, TN controlled={tn}, FP controlled={fp}")
+        print(f"  Sensitivity for varied: {sensitivity:.3f}")
+        print(f"  Specificity for controlled: {specificity:.3f}")
+        print(f"  Balanced accuracy: {ba:.3f}")
+        print("  WARNING: optimistic in-sample result; threshold was selected and tested on the same rows.")
+
     print("\nInterpretation limits:")
     print("- This is descriptive analysis of movement-protocol labels only.")
     print("- Overlapping ranges or small class differences suggest weak separation.")
