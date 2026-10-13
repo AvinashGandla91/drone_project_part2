@@ -18,3 +18,8 @@ data/private/
 data/external_tremor/
 models/*.joblib
 models/*.pkl
+
+data/movement_features.csv
+
+# External research repository (kept locally)
+/TremorComputerVision/
