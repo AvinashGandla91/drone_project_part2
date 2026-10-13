@@ -1,14 +1,16 @@
 """Independent webcam demo for Part II (no Part I repository required).
 
 This tool observes MediaPipe hand landmarks and displays an experimental
-movement-stability proxy. It does not diagnose fatigue or stress and does
-not control a physical drone.
+movement-stability proxy. An optional saved model can classify the recording
+protocol as controlled/varied. Neither output diagnoses fatigue or stress,
+and this tool does not control a physical drone.
 """
 
 from __future__ import annotations
 
 import argparse
 from collections import deque
+from pathlib import Path
 
 import numpy as np
 
@@ -19,6 +21,11 @@ def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--camera", type=int, default=0, help="Webcam index (default: 0)")
     parser.add_argument("--window", type=int, default=30, help="Frames per analysis window")
+    parser.add_argument(
+        "--model",
+        default=None,
+        help="Optional model file, e.g. models/movement_protocol_model.joblib",
+    )
     args = parser.parse_args()
 
     if args.window < 8:
@@ -33,6 +40,29 @@ def main() -> None:
             'python -m pip install -e ".[vision]"'
         ) from exc
 
+    classifier = None
+    feature_columns = None
+    if args.model:
+        model_path = Path(args.model)
+        if not model_path.is_file():
+            raise SystemExit(f"Model file not found: {model_path}")
+        try:
+            import joblib
+        except ImportError as exc:
+            raise SystemExit(
+                'Model loading requires joblib. Install it with: '
+                'python -m pip install -e ".[ml]"'
+            ) from exc
+        bundle = joblib.load(model_path)
+        classifier = bundle.get("model")
+        feature_columns = bundle.get("feature_columns")
+        if classifier is None or not feature_columns:
+            raise SystemExit(
+                f"Model file {model_path} must contain 'model' and 'feature_columns'."
+            )
+        print(f"Loaded optional movement-protocol classifier: {model_path}")
+        print("Its labels describe movement style only, not fatigue or cognitive state.")
+
     capture = cv2.VideoCapture(args.camera)
     if not capture.isOpened():
         raise SystemExit(
@@ -44,6 +74,7 @@ def main() -> None:
     history: deque[np.ndarray] = deque(maxlen=args.window)
     last_features = None
     last_score = None
+    last_prediction = None
 
     try:
         with mp_hands.Hands(
@@ -74,9 +105,23 @@ def main() -> None:
                     )
                     history.append(points)
 
-                    if len(history) >= 8 and len(history) == args.window:
+                    if len(history) == args.window:
                         last_features = extract_movement_features(np.stack(history))
                         last_score = experimental_stability_score(last_features)
+                        if classifier is not None:
+                            row = last_features.to_dict()
+                            missing = [name for name in feature_columns if name not in row]
+                            if missing:
+                                raise SystemExit(
+                                    "Model expects unsupported features: " + ", ".join(missing)
+                                )
+                            import pandas as pd
+
+                            sample = pd.DataFrame(
+                                [{name: row[name] for name in feature_columns}],
+                                columns=feature_columns,
+                            )
+                            last_prediction = str(classifier.predict(sample)[0])
 
                 cv2.putText(
                     frame,
@@ -89,9 +134,9 @@ def main() -> None:
                     cv2.LINE_AA,
                 )
                 if not result.multi_hand_landmarks:
+                    status = "No hand detected - show one hand to camera"
                     cv2.putText(
-                        frame, "No hand detected - show one hand to camera",
-                        (12, 60), cv2.FONT_HERSHEY_SIMPLEX, 0.55,
+                        frame, status, (12, 60), cv2.FONT_HERSHEY_SIMPLEX, 0.55,
                         (255, 255, 255), 2, cv2.LINE_AA,
                     )
                 elif last_score is None:
@@ -120,9 +165,15 @@ def main() -> None:
                         (12, 114), cv2.FONT_HERSHEY_SIMPLEX, 0.45,
                         (255, 255, 255), 1, cv2.LINE_AA,
                     )
+                    if classifier is not None:
+                        cv2.putText(
+                            frame, f"Movement protocol prediction: {last_prediction}",
+                            (12, 142), cv2.FONT_HERSHEY_SIMPLEX, 0.48,
+                            (255, 255, 255), 1, cv2.LINE_AA,
+                        )
 
                 cv2.putText(
-                    frame, "Not a diagnosis. Press Q or ESC to quit.",
+                    frame, "Experimental only; not a diagnosis. Press Q or ESC to quit.",
                     (12, frame.shape[0] - 16), cv2.FONT_HERSHEY_SIMPLEX,
                     0.45, (255, 255, 255), 1, cv2.LINE_AA,
                 )
