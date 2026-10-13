@@ -137,6 +137,55 @@ def main() -> None:
         print(f"  Balanced accuracy: {ba:.3f}")
         print("  WARNING: optimistic in-sample result; threshold was selected and tested on the same rows.")
 
+    if "controlled" in labels and "varied" in labels and len(valid_rows) >= 6:
+        # Leave-one-out: choose the threshold using only the other rows, then
+        # predict the held-out row. This reduces threshold-selection leakage.
+        loo_predictions: list[tuple[str, str]] = []
+        for held_out_index, held_out in enumerate(valid_rows):
+            train_rows = [row for i, row in enumerate(valid_rows) if i != held_out_index]
+            train_controlled = [
+                float(row["score"]) for row in train_rows if row["label"] == "controlled"
+            ]
+            train_varied = [
+                float(row["score"]) for row in train_rows if row["label"] == "varied"
+            ]
+            if not train_controlled or not train_varied:
+                continue
+            train_scores = train_controlled + train_varied
+            thresholds = sorted({
+                min(train_scores) - 1e-9,
+                max(train_scores) + 1e-9,
+                *train_scores,
+            })
+            best_threshold = thresholds[0]
+            best_ba = -1.0
+            for threshold in thresholds:
+                sensitivity = sum(s < threshold for s in train_varied) / len(train_varied)
+                specificity = sum(s >= threshold for s in train_controlled) / len(train_controlled)
+                ba = (sensitivity + specificity) / 2.0
+                if ba > best_ba:
+                    best_ba = ba
+                    best_threshold = threshold
+            predicted = (
+                "varied" if float(held_out["score"]) < best_threshold else "controlled"
+            )
+            loo_predictions.append((str(held_out["label"]), predicted))
+
+        if loo_predictions:
+            tp = sum(actual == "varied" and pred == "varied" for actual, pred in loo_predictions)
+            fn = sum(actual == "varied" and pred == "controlled" for actual, pred in loo_predictions)
+            tn = sum(actual == "controlled" and pred == "controlled" for actual, pred in loo_predictions)
+            fp = sum(actual == "controlled" and pred == "varied" for actual, pred in loo_predictions)
+            sensitivity = tp / (tp + fn) if tp + fn else 0.0
+            specificity = tn / (tn + fp) if tn + fp else 0.0
+            print("\nLeave-one-out threshold evaluation:")
+            print("  Each held-out row is predicted using a threshold chosen without that row.")
+            print(f"  Confusion matrix: TP varied={tp}, FN varied={fn}, TN controlled={tn}, FP controlled={fp}")
+            print(f"  Sensitivity for varied: {sensitivity:.3f}")
+            print(f"  Specificity for controlled: {specificity:.3f}")
+            print(f"  Balanced accuracy: {(sensitivity + specificity) / 2.0:.3f}")
+            print("  Limitation: rows may come from the same person/session, so this is not session-independent validation.")
+
     print("\nInterpretation limits:")
     print("- This is descriptive analysis of movement-protocol labels only.")
     print("- Overlapping ranges or small class differences suggest weak separation.")
