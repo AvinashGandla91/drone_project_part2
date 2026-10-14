@@ -235,7 +235,7 @@ def main() -> None:
                     cv2.putText(
                         frame,
                         f"Smoothness {last_features.trajectory_smoothness:.2f} | "
-                        f"Consistency {last_features.gesture_consistency:.2f}",
+                        f"Pose consistency {last_features.gesture_consistency:.2f}",
                         (12, 88), cv2.FONT_HERSHEY_SIMPLEX, 0.48,
                         (255, 255, 255), 1, cv2.LINE_AA,
                     )
