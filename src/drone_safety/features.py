@@ -7,6 +7,7 @@ Input coordinates must be consistently scaled and ordered over time.
 from __future__ import annotations
 
 from dataclasses import asdict, dataclass
+from math import isfinite
 from typing import Any
 
 import numpy as np
@@ -80,20 +81,26 @@ def extract_movement_features(landmarks: ArrayLike) -> MovementFeatures:
     window = min(7, points.shape[0] if points.shape[0] % 2 else points.shape[0] - 1)
     window = max(3, window)
     half_window = window // 2
-    tremor_residuals = []
-    for landmark_idx in range(points.shape[1]):
-        for dim_idx in range(points.shape[2]):
-            series = points[:, landmark_idx, dim_idx]
-            residuals = np.empty_like(series)
-            for frame_idx in range(len(series)):
-                start = max(0, frame_idx - half_window)
-                end = min(len(series), frame_idx + half_window + 1)
-                local_x = np.arange(start, end, dtype=np.float64) - frame_idx
-                local_y = series[start:end]
-                slope, intercept = np.polyfit(local_x, local_y, deg=1)
-                residuals[frame_idx] = series[frame_idx] - intercept
-            tremor_residuals.append(residuals)
-    tremor_proxy = float(np.sqrt(np.mean(np.square(tremor_residuals))))
+    # Vectorize across landmarks and dimensions. Repeated np.polyfit calls for
+    # every coordinate/frame were unnecessarily expensive in the live webcam loop.
+    series_matrix = points.reshape(points.shape[0], -1)
+    residuals = np.empty_like(series_matrix)
+    for frame_idx in range(points.shape[0]):
+        start = max(0, frame_idx - half_window)
+        end = min(points.shape[0], frame_idx + half_window + 1)
+        local_x = np.arange(start, end, dtype=np.float64) - frame_idx
+        local_y = series_matrix[start:end]
+        x_mean = float(np.mean(local_x))
+        y_mean = np.mean(local_y, axis=0)
+        centered_x = local_x - x_mean
+        denominator = float(np.sum(centered_x * centered_x))
+        if denominator > 0.0:
+            slopes = (centered_x[:, None] * (local_y - y_mean)).sum(axis=0) / denominator
+            predicted_at_frame = y_mean + slopes * (0.0 - x_mean)
+        else:
+            predicted_at_frame = y_mean
+        residuals[frame_idx] = series_matrix[frame_idx] - predicted_at_frame
+    tremor_proxy = float(np.sqrt(np.mean(np.square(residuals))))
 
     # Smoothness is bounded [0, 1]. Higher is smoother. This is a normalized
     # heuristic, not a standard clinical smoothness score.
@@ -163,6 +170,14 @@ def experimental_stability_score(features: MovementFeatures) -> float:
     to these selected heuristics. This score is not a learned model or a
     validated measure of fatigue, stress, or cognitive state.
     """
+    values = (
+        features.trajectory_smoothness,
+        features.gesture_consistency,
+        features.velocity_fluctuation,
+        features.tremor_proxy,
+    )
+    if not all(isfinite(value) for value in values):
+        raise ValueError("movement features must be finite")
     smoothness = np.clip(features.trajectory_smoothness, 0.0, 1.0)
     consistency = np.clip(features.gesture_consistency, 0.0, 1.0)
     fluctuation_penalty = 1.0 / (1.0 + max(0.0, features.velocity_fluctuation))
@@ -183,8 +198,8 @@ def movement_stability_status(score: float) -> str:
     Thresholds mirror the demo safety gate and are provisional, not calibrated
     against independently labelled operator-stability data.
     """
-    if not 0.0 <= score <= 1.0:
-        raise ValueError("score must be between 0 and 1")
+    if not isfinite(score) or not 0.0 <= score <= 1.0:
+        raise ValueError("score must be finite and between 0 and 1")
     if score < 0.60:
         return "LOW MOVEMENT STABILITY"
     if score < 0.72:
