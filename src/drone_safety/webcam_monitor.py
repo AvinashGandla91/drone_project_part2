@@ -8,6 +8,7 @@ No command is sent to a physical drone.
 from __future__ import annotations
 
 import argparse
+from math import isfinite
 from collections import deque
 from pathlib import Path
 
@@ -63,8 +64,8 @@ def main() -> None:
 
     if args.window < 8:
         parser.error("--window must be at least 8")
-    if not 0.0 <= args.demo_gesture_confidence <= 1.0:
-        parser.error("--demo-gesture-confidence must be between 0 and 1")
+    if not isfinite(args.demo_gesture_confidence) or not 0.0 <= args.demo_gesture_confidence <= 1.0:
+        parser.error("--demo-gesture-confidence must be finite and between 0 and 1")
 
     try:
         import cv2
@@ -200,7 +201,8 @@ def main() -> None:
                             )
                             last_prediction = str(classifier.predict(sample)[0])
                 else:
-                    # Avoid interpreting a hand reappearing elsewhere as continuous motion.
+                    # A gap ends the current track; do not mix old and new hand windows.
+                    history.clear()
                     palm_track.clear()
                     direction_votes.clear()
                     if args.commands:
