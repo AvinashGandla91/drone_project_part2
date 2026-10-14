@@ -2,6 +2,7 @@ import numpy as np
 import pytest
 
 from drone_safety.features import (
+    MovementFeatures,
     experimental_stability_score,
     extract_movement_features,
     movement_stability_status,
@@ -129,3 +130,22 @@ def test_reversing_and_changing_direction_increases_motion_entropy():
     assert 0.0 <= varied.motion_entropy <= 1.0
     assert np.isfinite(varied.velocity_fluctuation)
 
+
+
+@pytest.mark.parametrize("score", [float("nan"), float("inf"), float("-inf")])
+def test_movement_stability_status_rejects_non_finite_scores(score):
+    with pytest.raises(ValueError):
+        movement_stability_status(score)
+
+
+def test_experimental_stability_score_rejects_non_finite_features():
+    features = MovementFeatures(
+        tremor_proxy=0.0,
+        trajectory_smoothness=1.0,
+        gesture_consistency=1.0,
+        velocity_fluctuation=float("nan"),
+        motion_entropy=0.0,
+        frame_count=10,
+    )
+    with pytest.raises(ValueError):
+        experimental_stability_score(features)
