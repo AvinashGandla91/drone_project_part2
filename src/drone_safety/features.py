@@ -96,6 +96,16 @@ def extract_movement_features(landmarks: ArrayLike) -> MovementFeatures:
     trajectory_smoothness = float(1.0 / (1.0 + normalized_jerk))
     trajectory_smoothness = float(np.clip(trajectory_smoothness, 0.0, 1.0))
 
+    # Landmark tracking jitters even when the hand is held still. Detect a
+    # near-stationary centroid track and avoid amplifying tiny noise through
+    # jerk/mean-speed ratios. Thresholds are provisional normalized-coordinate
+    # noise floors, not calibrated physical motion thresholds.
+    centroid_span = float(np.max(np.ptp(centroid[:, :2], axis=0)))
+    mean_speed = float(np.mean(np.linalg.norm(velocity, axis=1)))
+    near_stationary = centroid_span <= 0.008 and mean_speed <= 0.0015
+    if near_stationary:
+        trajectory_smoothness = 1.0
+
     # Similarity of consecutive centered hand poses. Centering removes global
     # translation so this primarily reflects relative landmark configuration.
     centered = points - points.mean(axis=1, keepdims=True)
@@ -110,14 +120,16 @@ def extract_movement_features(landmarks: ArrayLike) -> MovementFeatures:
     speeds = np.linalg.norm(velocity, axis=1)
     mean_speed = float(np.mean(speeds))
     velocity_fluctuation = (
-        float(np.std(speeds) / mean_speed) if mean_speed > 1e-8 else 0.0
+        0.0
+        if near_stationary
+        else (float(np.std(speeds) / mean_speed) if mean_speed > 1e-8 else 0.0)
     )
     velocity_fluctuation = float(np.clip(velocity_fluctuation, 0.0, 1e6))
 
     # Shannon entropy of movement direction bins. Low entropy can be a steady
     # direction; high entropy can represent varied movement. Neither is
     # inherently good/bad without a task-specific protocol.
-    if velocity.shape[0] and np.any(np.linalg.norm(velocity, axis=1) > 1e-8):
+    if not near_stationary and velocity.shape[0] and np.any(np.linalg.norm(velocity, axis=1) > 1e-8):
         moving = velocity[np.linalg.norm(velocity, axis=1) > 1e-8]
         angles = np.arctan2(moving[:, 1], moving[:, 0])
         bins = np.histogram(angles, bins=8, range=(-np.pi, np.pi))[0].astype(float)
