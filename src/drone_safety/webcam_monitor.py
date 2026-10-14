@@ -29,7 +29,7 @@ def _direction_command(track: deque[np.ndarray]) -> str:
     end = track[-1]
     delta = end - start
     # Use a short displacement window for responsiveness; coordinates are normalized.
-    if abs(delta[0]) < 0.006 and abs(delta[1]) < 0.006:
+    if abs(delta[0]) < 0.003 and abs(delta[1]) < 0.003:
         return "HOLD"
     if abs(delta[0]) >= abs(delta[1]):
         return "MOVE_RIGHT" if delta[0] > 0 else "MOVE_LEFT"
@@ -107,7 +107,7 @@ def main() -> None:
 
     mp_hands = mp.solutions.hands
     history: deque[np.ndarray] = deque(maxlen=args.window)
-    palm_track: deque[np.ndarray] = deque(maxlen=2)
+    palm_track: deque[np.ndarray] = deque(maxlen=3)
     # Two-frame confirmation filters isolated noisy detections while keeping commands responsive.
     direction_votes: deque[str] = deque(maxlen=2)
     last_detected_command = "HOLD"
