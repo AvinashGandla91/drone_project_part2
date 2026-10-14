@@ -39,8 +39,8 @@ def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument(
         "--input",
-        default="data/movement_features.csv",
-        help="CSV created by collect_dataset.py (default: data/movement_features.csv)",
+        default="data/movement_features_sessions.csv",
+        help="CSV created by collect_dataset.py (default: data/movement_features_sessions.csv)",
     )
     args = parser.parse_args()
     path = Path(args.input)
