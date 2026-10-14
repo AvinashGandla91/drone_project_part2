@@ -7,6 +7,7 @@ Input coordinates must be consistently scaled and ordered over time.
 from __future__ import annotations
 
 from dataclasses import asdict, dataclass
+from math import isfinite
 from typing import Any
 
 import numpy as np
@@ -169,6 +170,14 @@ def experimental_stability_score(features: MovementFeatures) -> float:
     to these selected heuristics. This score is not a learned model or a
     validated measure of fatigue, stress, or cognitive state.
     """
+    values = (
+        features.trajectory_smoothness,
+        features.gesture_consistency,
+        features.velocity_fluctuation,
+        features.tremor_proxy,
+    )
+    if not all(isfinite(value) for value in values):
+        raise ValueError("movement features must be finite")
     smoothness = np.clip(features.trajectory_smoothness, 0.0, 1.0)
     consistency = np.clip(features.gesture_consistency, 0.0, 1.0)
     fluctuation_penalty = 1.0 / (1.0 + max(0.0, features.velocity_fluctuation))
@@ -189,8 +198,8 @@ def movement_stability_status(score: float) -> str:
     Thresholds mirror the demo safety gate and are provisional, not calibrated
     against independently labelled operator-stability data.
     """
-    if not 0.0 <= score <= 1.0:
-        raise ValueError("score must be between 0 and 1")
+    if not isfinite(score) or not 0.0 <= score <= 1.0:
+        raise ValueError("score must be finite and between 0 and 1")
     if score < 0.60:
         return "LOW MOVEMENT STABILITY"
     if score < 0.72:
