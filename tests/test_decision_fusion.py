@@ -31,7 +31,7 @@ def test_moderate_stability_reduces_sensitivity():
     assert result.simulated_command == "MOVE_BACK"
 
 
-@pytest.mark.parametrize("confidence", [-0.1, 1.1])
+@pytest.mark.parametrize("confidence", [-0.1, 1.1, float("nan"), float("inf"), float("-inf")])
 def test_invalid_confidence_is_rejected(confidence):
     with pytest.raises(ValueError):
         validate_command("MOVE_FORWARD", confidence, 0.9)
@@ -40,3 +40,17 @@ def test_invalid_confidence_is_rejected(confidence):
 def test_invalid_configuration_is_rejected():
     with pytest.raises(ValueError):
         DecisionConfig(min_stability_score=0.8, reduced_sensitivity_score=0.7)
+
+
+@pytest.mark.parametrize("score", [float("nan"), float("inf"), float("-inf")])
+def test_non_finite_scores_are_rejected(score):
+    with pytest.raises(ValueError):
+        validate_command("MOVE_FORWARD", 0.9, score)
+    with pytest.raises(ValueError):
+        validate_command("MOVE_FORWARD", score, 0.9)
+
+
+@pytest.mark.parametrize("threshold", [float("nan"), float("inf"), float("-inf")])
+def test_non_finite_configuration_is_rejected(threshold):
+    with pytest.raises(ValueError):
+        DecisionConfig(min_stability_score=threshold)
