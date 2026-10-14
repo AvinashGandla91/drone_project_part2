@@ -99,7 +99,7 @@ def extract_movement_features(landmarks: ArrayLike) -> MovementFeatures:
         else:
             predicted_at_frame = y_mean
         residuals[frame_idx] = series_matrix[frame_idx] - predicted_at_frame
-    tremor_proxy = float(np.sqrt(np.mean(np.square(residuals)))
+    tremor_proxy = float(np.sqrt(np.mean(np.square(residuals))))
 
     # Smoothness is bounded [0, 1]. Higher is smoother. This is a normalized
     # heuristic, not a standard clinical smoothness score.
