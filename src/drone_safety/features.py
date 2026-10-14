@@ -73,19 +73,26 @@ def extract_movement_features(landmarks: ArrayLike) -> MovementFeatures:
     acceleration = np.diff(velocity, axis=0)
     jerk = np.diff(acceleration, axis=0)
 
-    # Approximate high-frequency residual by subtracting a short moving average.
-    # This is deliberately called a proxy because frame rate and camera noise
-    # influence it; it is not a calibrated tremor frequency/amplitude estimate.
-    window = min(5, points.shape[0] if points.shape[0] % 2 else points.shape[0] - 1)
+    # Approximate high-frequency residual after removing a local linear trend.
+    # Unlike a moving average, a local linear fit is less likely to treat smooth,
+    # fast, straight-line movement as tremor. This remains a frame-domain proxy,
+    # affected by camera noise and frame rate; it is not a clinical measurement.
+    window = min(7, points.shape[0] if points.shape[0] % 2 else points.shape[0] - 1)
     window = max(3, window)
-    kernel = np.ones(window, dtype=np.float64) / window
+    half_window = window // 2
     tremor_residuals = []
     for landmark_idx in range(points.shape[1]):
         for dim_idx in range(points.shape[2]):
             series = points[:, landmark_idx, dim_idx]
-            padded = np.pad(series, (window // 2, window // 2), mode="edge")
-            smooth = np.convolve(padded, kernel, mode="valid")[: len(series)]
-            tremor_residuals.append(series - smooth)
+            residuals = np.empty_like(series)
+            for frame_idx in range(len(series)):
+                start = max(0, frame_idx - half_window)
+                end = min(len(series), frame_idx + half_window + 1)
+                local_x = np.arange(start, end, dtype=np.float64) - frame_idx
+                local_y = series[start:end]
+                slope, intercept = np.polyfit(local_x, local_y, deg=1)
+                residuals[frame_idx] = series[frame_idx] - intercept
+            tremor_residuals.append(residuals)
     tremor_proxy = float(np.sqrt(np.mean(np.square(tremor_residuals))))
 
     # Smoothness is bounded [0, 1]. Higher is smoother. This is a normalized
