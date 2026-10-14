@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from dataclasses import asdict, dataclass
 from enum import Enum
+from math import isfinite
 
 
 class DecisionResult(str, Enum):
@@ -22,7 +23,7 @@ class DecisionConfig:
 
     def __post_init__(self) -> None:
         for field_name, value in asdict(self).items():
-            if not 0.0 <= value <= 1.0:
+            if not isfinite(value) or not 0.0 <= value <= 1.0:
                 raise ValueError(f"{field_name} must be between 0 and 1")
         if self.reduced_sensitivity_score < self.min_stability_score:
             raise ValueError(
@@ -54,10 +55,10 @@ def validate_command(
 
     if not command or not command.strip():
         raise ValueError("command must be a non-empty string")
-    if not 0.0 <= gesture_confidence <= 1.0:
-        raise ValueError("gesture_confidence must be between 0 and 1")
-    if not 0.0 <= stability_score <= 1.0:
-        raise ValueError("stability_score must be between 0 and 1")
+    if not isfinite(gesture_confidence) or not 0.0 <= gesture_confidence <= 1.0:
+        raise ValueError("gesture_confidence must be finite and between 0 and 1")
+    if not isfinite(stability_score) or not 0.0 <= stability_score <= 1.0:
+        raise ValueError("stability_score must be finite and between 0 and 1")
 
     if gesture_confidence < settings.min_gesture_confidence:
         return Decision(
