@@ -89,6 +89,15 @@ def _translated_hand_track(positions):
     return np.stack([shape + np.asarray(position) for position in positions])
 
 
+
+def test_smooth_fast_translation_is_not_misclassified_as_tremor():
+    positions = [(index * 0.025, 0.0) for index in range(30)]
+    result = extract_movement_features(_translated_hand_track(positions))
+
+    assert result.tremor_proxy < 1e-8
+    assert result.velocity_fluctuation == pytest.approx(0.0, abs=1e-8)
+    assert result.trajectory_smoothness > 0.99
+
 def test_smooth_unidirectional_motion_has_low_direction_entropy():
     positions = [(index * 0.01, 0.0) for index in range(30)]
     result = extract_movement_features(_translated_hand_track(positions))
