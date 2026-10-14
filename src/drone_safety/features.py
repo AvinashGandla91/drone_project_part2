@@ -80,20 +80,26 @@ def extract_movement_features(landmarks: ArrayLike) -> MovementFeatures:
     window = min(7, points.shape[0] if points.shape[0] % 2 else points.shape[0] - 1)
     window = max(3, window)
     half_window = window // 2
-    tremor_residuals = []
-    for landmark_idx in range(points.shape[1]):
-        for dim_idx in range(points.shape[2]):
-            series = points[:, landmark_idx, dim_idx]
-            residuals = np.empty_like(series)
-            for frame_idx in range(len(series)):
-                start = max(0, frame_idx - half_window)
-                end = min(len(series), frame_idx + half_window + 1)
-                local_x = np.arange(start, end, dtype=np.float64) - frame_idx
-                local_y = series[start:end]
-                slope, intercept = np.polyfit(local_x, local_y, deg=1)
-                residuals[frame_idx] = series[frame_idx] - intercept
-            tremor_residuals.append(residuals)
-    tremor_proxy = float(np.sqrt(np.mean(np.square(tremor_residuals))))
+    # Vectorize across landmarks and dimensions. Repeated np.polyfit calls for
+    # every coordinate/frame were unnecessarily expensive in the live webcam loop.
+    series_matrix = points.reshape(points.shape[0], -1)
+    residuals = np.empty_like(series_matrix)
+    for frame_idx in range(points.shape[0]):
+        start = max(0, frame_idx - half_window)
+        end = min(points.shape[0], frame_idx + half_window + 1)
+        local_x = np.arange(start, end, dtype=np.float64) - frame_idx
+        local_y = series_matrix[start:end]
+        x_mean = float(np.mean(local_x))
+        y_mean = np.mean(local_y, axis=0)
+        centered_x = local_x - x_mean
+        denominator = float(np.sum(centered_x * centered_x))
+        if denominator > 0.0:
+            slopes = (centered_x[:, None] * (local_y - y_mean)).sum(axis=0) / denominator
+            predicted_at_frame = y_mean + slopes * (0.0 - x_mean)
+        else:
+            predicted_at_frame = y_mean
+        residuals[frame_idx] = series_matrix[frame_idx] - predicted_at_frame
+    tremor_proxy = float(np.sqrt(np.mean(np.square(residuals)))
 
     # Smoothness is bounded [0, 1]. Higher is smoother. This is a normalized
     # heuristic, not a standard clinical smoothness score.
