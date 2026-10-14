@@ -36,6 +36,24 @@ def test_invalid_input_is_rejected(bad_input):
         extract_movement_features(bad_input)
 
 
+
+def test_near_stationary_landmark_jitter_does_not_look_unstable():
+    rng = np.random.default_rng(7)
+    base = np.column_stack((
+        np.linspace(0.2, 0.4, 21),
+        np.linspace(0.3, 0.5, 21),
+        np.zeros(21),
+    ))
+    landmarks = np.stack([
+        base + rng.normal(0.0, 0.0003, size=base.shape)
+        for _ in range(30)
+    ])
+    result = extract_movement_features(landmarks)
+
+    assert result.trajectory_smoothness == pytest.approx(1.0)
+    assert result.velocity_fluctuation == 0.0
+    assert result.motion_entropy == 0.0
+
 def test_stationary_landmarks_have_finite_features():
     landmarks = np.ones((10, 21, 3), dtype=float)
     result = extract_movement_features(landmarks)
