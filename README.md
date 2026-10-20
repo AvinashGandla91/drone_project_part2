@@ -29,7 +29,8 @@ src/drone_safety/
   features.py                     # Movement features computed from 2D/3D landmark tracks
   decision_fusion.py              # Gesture-confidence + stability safety gate
   demo.py                          # Synthetic command-gate demonstration
-  webcam_monitor.py                # Standalone live webcam monitor
+  webcam_monitor.py                # Live webcam movement and gesture monitor
+  gesture_commands.py              # Reference-pose labels and simulation command mapping
   collect_dataset.py               # Consent-based movement-protocol data collector
   train_stability_model.py         # Experimental controlled/varied protocol classifier
   analyze_external_dataset.py      # Published tremor summary-table analysis
@@ -53,6 +54,18 @@ python -m drone_safety.demo
 ```
 
 If PowerShell blocks activation, run commands using the environment's `Scripts\python.exe` instead.
+
+## Reference-pose gesture commands
+
+With `--commands`, the webcam monitor now classifies static hand poses instead of inferring left/right/up/down from palm movement. The intended labels are `LEFT`, `RIGHT`, `FORWARD`, `BACKWARD`, `LAND`, `UPWARD`, and `STOP` (closed fist). `STOP` maps to the simulation `HOLD` state. Directional commands are displayed only after two matching frame classifications; a closed fist stops the directional command immediately.
+
+The current classifier uses geometric heuristics over MediaPipe landmarks. It is a prototype, not a trained or validated seven-class model, and some poses may be ambiguous under different camera angles or mirrored views. Test and calibrate it with the exact reference hand poses before relying on its labels. All outputs are simulation-only; no physical drone is controlled.
+
+Run the command display with:
+
+```powershell
+.\\.venv312\\Scripts\\python.exe -m drone_safety.webcam_monitor --commands
+```
 
 ## Input format
 
