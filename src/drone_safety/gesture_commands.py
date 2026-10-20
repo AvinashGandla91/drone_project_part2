@@ -7,7 +7,6 @@ Commands remain simulation-only.
 
 from __future__ import annotations
 
-from math import hypot
 from typing import Sequence
 
 import numpy as np
@@ -46,20 +45,20 @@ def classify_hand_pose(landmarks: Sequence[Sequence[float]]) -> str:
         raise ValueError("landmarks must be a finite array with shape (21, 3)")
 
     wrist = points[0, :2]
-    mcp = points[[5, 9, 13, 17], :2]
     tips = points[[8, 12, 16, 20], :2]
-    pips = points[[6, 10, 14, 18], :2]
     palm_width = float(np.linalg.norm(points[5, :2] - points[17, :2]))
     palm_length = float(np.linalg.norm(points[9, :2] - wrist))
     if palm_width < 1e-5 or palm_length < 1e-5:
         return "UNKNOWN"
 
-    # In image coordinates, a finger is extended when its tip is above its PIP.
-    # A small margin reduces false positives from bent fingers.
-    extended = tips[:, 1] < pips[:, 1] - 0.015
+    # Compare tip-to-wrist distance with PIP-to-wrist distance so the test also
+    # works when the hand is rotated sideways (unlike a simple y-coordinate check).
+    pips = points[[6, 10, 14, 18], :2]
+    tip_radius = np.linalg.norm(tips - wrist, axis=1)
+    pip_radius = np.linalg.norm(pips - wrist, axis=1)
+    extended = tip_radius > pip_radius * 1.12
     extended_count = int(extended.sum())
     thumb_tip = points[4, :2]
-    thumb_mcp = points[2, :2]
     index_mcp = points[5, :2]
     thumb_extension = float(np.linalg.norm(thumb_tip - index_mcp)) / palm_width
 
