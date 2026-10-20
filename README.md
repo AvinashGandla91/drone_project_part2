@@ -64,14 +64,14 @@ The current classifier uses geometric heuristics over MediaPipe landmarks. It is
 Run the command display with:
 
 ```powershell
-.\\.venv312\\Scripts\\python.exe -m drone_safety.webcam_monitor --commands
+.\.venv312\Scripts\python.exe -m drone_safety.webcam_monitor --commands
 ```
 
 ## Input format
 
 `extract_movement_features()` accepts a finite array with shape `(frames, landmarks, dimensions)`, where dimensions are 2 or 3. Coordinates should use a consistent normalization and coordinate system across frames. Provide at least 8 frames for meaningful temporal features.
 
-The current implementation assumes the hand has already been detected and landmark points have already been extracted (for example, by the project's existing OpenCV/MediaPipe stage). It does not replace Part I gesture recognition.
+The webcam monitor detects hand landmarks with MediaPipe. The seven-pose classifier is a separate prototype and does not require the Part I repository, but it still needs validation against the actual reference poses.
 
 ## Published external dataset: TremorComputerVision
 
