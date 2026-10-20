@@ -1,15 +1,15 @@
 """Independent webcam demo for Part II (no Part I repository required).
 
 Displays experimental movement features and optional movement-protocol prediction.
-With --commands, hand motion is mapped to simulated directional commands only.
+With --commands, reference hand poses map to simulated commands only.
 No command is sent to a physical drone.
 """
 
 from __future__ import annotations
 
 import argparse
-from math import isfinite
 from collections import deque
+from math import isfinite
 from pathlib import Path
 
 import numpy as np
@@ -159,7 +159,7 @@ def main() -> None:
                                 if len(direction_votes) == 2 and direction_votes[-2] == raw_command
                                 else "UNKNOWN"
                             )
-                            last_command = last_detected_command
+                            last_command = "HOLD"  # Wait for the stability gate before showing a command.
 
                     if len(history) == args.window:
                         last_features = extract_movement_features(np.stack(history))
