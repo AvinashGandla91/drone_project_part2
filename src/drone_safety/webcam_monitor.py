@@ -23,11 +23,6 @@ from .features import (
 )
 
 
-def _direction_command(landmarks: np.ndarray) -> str:
-    """Classify a static hand pose using reference-pose rules."""
-    return classify_hand_pose(landmarks)
-
-
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--camera", type=int, default=0, help="Webcam index (default: 0)")
@@ -138,7 +133,7 @@ def main() -> None:
                     )
                     history.append(points)
                     if args.commands:
-                        raw_command = _direction_command(points)
+                        raw_command = classify_hand_pose(points)
                         # Closed fist is an immediate stop; other poses require two matching frames.
                         if raw_command == "STOP":
                             direction_votes.clear()
