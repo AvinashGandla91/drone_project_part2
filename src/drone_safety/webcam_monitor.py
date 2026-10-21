@@ -15,7 +15,7 @@ from pathlib import Path
 import numpy as np
 
 from .decision_fusion import validate_command
-from .gesture_commands import classify_hand_pose, command_for_gesture
+from .gesture_commands import command_for_gesture, predict_gesture
 from .features import (
     experimental_stability_score,
     extract_movement_features,
@@ -33,6 +33,14 @@ def main() -> None:
         help="Optional model file, e.g. models/movement_protocol_model.joblib",
     )
     parser.add_argument(
+        "--gesture-model", default="models/gesture_random_forest.joblib",
+        help="Trained seven-gesture Random Forest bundle; train it before enabling --commands",
+    )
+    parser.add_argument(
+        "--gesture-confidence", type=float, default=0.75,
+        help="Minimum Random Forest probability required to accept a gesture",
+    )
+    parser.add_argument(
         "--commands",
         action="store_true",
         help="Show simulated directional commands passed through the safety gate",
@@ -41,15 +49,14 @@ def main() -> None:
         "--demo-gesture-confidence",
         type=float,
         default=0.90,
-        help=(
-            "Placeholder gesture confidence for standalone testing only; "
-            "replace with Part I model output during integration (default: 0.90)"
-        ),
+        help="Placeholder confidence for legacy movement-model experiments only",
     )
     args = parser.parse_args()
 
     if args.window < 8:
         parser.error("--window must be at least 8")
+    if not 0.0 <= args.gesture_confidence <= 1.0:
+        parser.error("--gesture-confidence must be between 0 and 1")
     if not isfinite(args.demo_gesture_confidence) or not 0.0 <= args.demo_gesture_confidence <= 1.0:
         parser.error("--demo-gesture-confidence must be finite and between 0 and 1")
 
@@ -64,6 +71,21 @@ def main() -> None:
 
     classifier = None
     feature_columns = None
+    gesture_model = None
+    if args.commands:
+        gesture_path = Path(args.gesture_model)
+        if not gesture_path.is_file():
+            raise SystemExit(
+                f"Gesture model not found: {gesture_path}. Collect labelled samples with "
+                "python -m drone_safety.collect_gesture_dataset, then train with "
+                "python -m drone_safety.train_gesture_model."
+            )
+        import joblib
+        gesture_bundle = joblib.load(gesture_path)
+        gesture_model = gesture_bundle.get("model")
+        if gesture_model is None:
+            raise SystemExit(f"Gesture model bundle is invalid: {gesture_path}")
+        print(f"Loaded seven-pose gesture model: {gesture_path}")
     if args.model:
         model_path = Path(args.model)
         if not model_path.is_file():
@@ -133,7 +155,9 @@ def main() -> None:
                     )
                     history.append(points)
                     if args.commands:
-                        raw_command = classify_hand_pose(points)
+                        raw_command, gesture_confidence = predict_gesture(
+                            gesture_model, points, args.gesture_confidence
+                        )
                         # Closed fist is an immediate stop; other poses require two matching frames.
                         if raw_command == "STOP":
                             direction_votes.clear()
@@ -168,7 +192,7 @@ def main() -> None:
                             else:
                                 decision = validate_command(
                                     command_for_gesture(last_detected_command),
-                                    args.demo_gesture_confidence,
+                                    gesture_confidence,
                                     last_score,
                                 )
                                 last_gate_result = decision.result.value.upper()
@@ -264,7 +288,7 @@ def main() -> None:
                         (0, 255, 255), 2, cv2.LINE_AA,
                     )
                     cv2.putText(
-                        frame, f"Demo gesture confidence: {args.demo_gesture_confidence:.2f}",
+                        frame, f"Gesture confidence: {gesture_confidence:.2f}",
                         (12, 240), cv2.FONT_HERSHEY_SIMPLEX, 0.38,
                         (255, 255, 255), 1, cv2.LINE_AA,
                     )
