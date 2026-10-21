@@ -9,7 +9,6 @@ from __future__ import annotations
 
 import argparse
 from collections import deque
-from math import isfinite
 from pathlib import Path
 
 import numpy as np
@@ -45,20 +44,12 @@ def main() -> None:
         action="store_true",
         help="Show simulated directional commands passed through the safety gate",
     )
-    parser.add_argument(
-        "--demo-gesture-confidence",
-        type=float,
-        default=0.90,
-        help="Placeholder confidence for legacy movement-model experiments only",
-    )
     args = parser.parse_args()
 
     if args.window < 8:
         parser.error("--window must be at least 8")
     if not 0.0 <= args.gesture_confidence <= 1.0:
         parser.error("--gesture-confidence must be between 0 and 1")
-    if not isfinite(args.demo_gesture_confidence) or not 0.0 <= args.demo_gesture_confidence <= 1.0:
-        parser.error("--demo-gesture-confidence must be finite and between 0 and 1")
 
     try:
         import cv2
@@ -286,11 +277,6 @@ def main() -> None:
                         frame, f"SAFETY: {last_gate_result} | COMMAND: {last_command}",
                         (12, 216), cv2.FONT_HERSHEY_SIMPLEX, 0.44,
                         (0, 255, 255), 2, cv2.LINE_AA,
-                    )
-                    cv2.putText(
-                        frame, f"Gesture confidence: {gesture_confidence:.2f}",
-                        (12, 240), cv2.FONT_HERSHEY_SIMPLEX, 0.38,
-                        (255, 255, 255), 1, cv2.LINE_AA,
                     )
                     cv2.putText(
                         frame, last_gate_reason[:95],
