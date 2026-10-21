@@ -1,40 +1,25 @@
 """Independent webcam demo for Part II (no Part I repository required).
 
 Displays experimental movement features and optional movement-protocol prediction.
-With --commands, hand motion is mapped to simulated directional commands only.
+With --commands, reference hand poses map to simulated commands only.
 No command is sent to a physical drone.
 """
 
 from __future__ import annotations
 
 import argparse
-from math import isfinite
 from collections import deque
 from pathlib import Path
 
 import numpy as np
 
 from .decision_fusion import validate_command
+from .gesture_commands import command_for_gesture, predict_gesture
 from .features import (
     experimental_stability_score,
     extract_movement_features,
     movement_stability_status,
 )
-
-
-def _direction_command(track: deque[np.ndarray]) -> str:
-    """Map palm-centre displacement over a short window to a simulated command."""
-    if len(track) < 2:
-        return "HOLD"
-    start = track[0]
-    end = track[-1]
-    delta = end - start
-    # Use a short displacement window for responsiveness; coordinates are normalized.
-    if abs(delta[0]) < 0.003 and abs(delta[1]) < 0.003:
-        return "HOLD"
-    if abs(delta[0]) >= abs(delta[1]):
-        return "MOVE_RIGHT" if delta[0] > 0 else "MOVE_LEFT"
-    return "MOVE_DOWN" if delta[1] > 0 else "MOVE_UP"
 
 
 def main() -> None:
@@ -47,25 +32,24 @@ def main() -> None:
         help="Optional model file, e.g. models/movement_protocol_model.joblib",
     )
     parser.add_argument(
+        "--gesture-model", default="models/gesture_random_forest.joblib",
+        help="Trained seven-gesture Random Forest bundle; train it before enabling --commands",
+    )
+    parser.add_argument(
+        "--gesture-confidence", type=float, default=0.75,
+        help="Minimum Random Forest probability required to accept a gesture",
+    )
+    parser.add_argument(
         "--commands",
         action="store_true",
         help="Show simulated directional commands passed through the safety gate",
-    )
-    parser.add_argument(
-        "--demo-gesture-confidence",
-        type=float,
-        default=0.90,
-        help=(
-            "Placeholder gesture confidence for standalone testing only; "
-            "replace with Part I model output during integration (default: 0.90)"
-        ),
     )
     args = parser.parse_args()
 
     if args.window < 8:
         parser.error("--window must be at least 8")
-    if not isfinite(args.demo_gesture_confidence) or not 0.0 <= args.demo_gesture_confidence <= 1.0:
-        parser.error("--demo-gesture-confidence must be finite and between 0 and 1")
+    if not 0.0 <= args.gesture_confidence <= 1.0:
+        parser.error("--gesture-confidence must be between 0 and 1")
 
     try:
         import cv2
@@ -78,6 +62,21 @@ def main() -> None:
 
     classifier = None
     feature_columns = None
+    gesture_model = None
+    if args.commands:
+        gesture_path = Path(args.gesture_model)
+        if not gesture_path.is_file():
+            raise SystemExit(
+                f"Gesture model not found: {gesture_path}. Collect labelled samples with "
+                "python -m drone_safety.collect_gesture_dataset, then train with "
+                "python -m drone_safety.train_gesture_model."
+            )
+        import joblib
+        gesture_bundle = joblib.load(gesture_path)
+        gesture_model = gesture_bundle.get("model")
+        if gesture_model is None:
+            raise SystemExit(f"Gesture model bundle is invalid: {gesture_path}")
+        print(f"Loaded seven-pose gesture model: {gesture_path}")
     if args.model:
         model_path = Path(args.model)
         if not model_path.is_file():
@@ -108,10 +107,9 @@ def main() -> None:
 
     mp_hands = mp.solutions.hands
     history: deque[np.ndarray] = deque(maxlen=args.window)
-    palm_track: deque[np.ndarray] = deque(maxlen=3)
     # Two-frame confirmation filters isolated noisy detections while keeping commands responsive.
     direction_votes: deque[str] = deque(maxlen=2)
-    last_detected_command = "HOLD"
+    last_detected_command = "UNKNOWN"
     last_features = None
     last_score = None
     last_prediction = None
@@ -147,36 +145,45 @@ def main() -> None:
                         dtype=np.float64,
                     )
                     history.append(points)
-                    # Palm centre from wrist and four MCP joints, less sensitive to finger pose.
-                    palm_track.append(points[[0, 5, 9, 13, 17], :].mean(axis=0))
                     if args.commands:
-                        raw_command = _direction_command(palm_track)
-                        # Reset stale votes immediately when direction changes or motion stops.
-                        if raw_command == "HOLD" or (
-                            direction_votes and raw_command != direction_votes[-1]
-                        ):
-                            direction_votes.clear()
-                        direction_votes.append(raw_command)
-                        last_detected_command = (
-                            raw_command
-                            if raw_command != "HOLD" and len(direction_votes) >= 2
-                                and direction_votes[-2] == raw_command
-                            else "HOLD"
+                        raw_command, gesture_confidence = predict_gesture(
+                            gesture_model, points, args.gesture_confidence
                         )
-                        last_command = last_detected_command
+                        # Closed fist is an immediate stop; other poses require two matching frames.
+                        if raw_command == "STOP":
+                            direction_votes.clear()
+                            last_detected_command = "STOP"
+                            last_command = "HOLD"
+                            last_gate_result = "STOP"
+                            last_gate_reason = "Closed fist detected; directional command stopped."
+                        elif raw_command == "UNKNOWN":
+                            direction_votes.clear()
+                            last_detected_command = "UNKNOWN"
+                            last_command = "HOLD"
+                        else:
+                            if direction_votes and raw_command != direction_votes[-1]:
+                                direction_votes.clear()
+                            direction_votes.append(raw_command)
+                            last_detected_command = (
+                                raw_command
+                                if len(direction_votes) == 2 and direction_votes[-2] == raw_command
+                                else "UNKNOWN"
+                            )
+                            last_command = "HOLD"  # Wait for the stability gate before showing a command.
 
                     if len(history) == args.window:
                         last_features = extract_movement_features(np.stack(history))
                         last_score = experimental_stability_score(last_features)
                         if args.commands:
-                            if last_detected_command == "HOLD":
-                                last_gate_result = "HOLD"
-                                last_gate_reason = "No consistent directional movement detected."
+                            if last_detected_command in {"UNKNOWN", "STOP"}:
+                                if last_detected_command == "UNKNOWN":
+                                    last_gate_result = "HOLD"
+                                    last_gate_reason = "No confident reference-pose gesture detected."
                                 last_command = "HOLD"
                             else:
                                 decision = validate_command(
-                                    last_detected_command,
-                                    args.demo_gesture_confidence,
+                                    command_for_gesture(last_detected_command),
+                                    gesture_confidence,
                                     last_score,
                                 )
                                 last_gate_result = decision.result.value.upper()
@@ -203,16 +210,15 @@ def main() -> None:
                 else:
                     # A gap ends the current track; do not mix old and new hand windows.
                     history.clear()
-                    palm_track.clear()
                     direction_votes.clear()
                     if args.commands:
                         last_command = "HOLD"
-                        last_detected_command = "HOLD"
+                        last_detected_command = "UNKNOWN"
                         last_gate_result = "HOLD"
                         last_gate_reason = "No hand detected."
 
                 cv2.putText(
-                    frame, "Part II: experimental movement analysis",
+                    frame, "Part II: reference-pose gesture + movement analysis",
                     (12, 28), cv2.FONT_HERSHEY_SIMPLEX, 0.58,
                     (255, 255, 255), 2, cv2.LINE_AA,
                 )
@@ -271,11 +277,6 @@ def main() -> None:
                         frame, f"SAFETY: {last_gate_result} | COMMAND: {last_command}",
                         (12, 216), cv2.FONT_HERSHEY_SIMPLEX, 0.44,
                         (0, 255, 255), 2, cv2.LINE_AA,
-                    )
-                    cv2.putText(
-                        frame, f"Demo gesture confidence: {args.demo_gesture_confidence:.2f}",
-                        (12, 240), cv2.FONT_HERSHEY_SIMPLEX, 0.38,
-                        (255, 255, 255), 1, cv2.LINE_AA,
                     )
                     cv2.putText(
                         frame, last_gate_reason[:95],

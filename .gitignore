@@ -23,3 +23,5 @@ data/movement_features*.csv
 
 # External research repository (kept locally)
 /TremorComputerVision/
+
+data/gesture_landmarks.csv
